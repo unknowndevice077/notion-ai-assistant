@@ -1,0 +1,10 @@
+node_modules/
+dist/
+src-tauri/target/
+
+# Secrets — never commit these
+license-signing-key.json
+.env
+
+.DS_Store
+Thumbs.db
