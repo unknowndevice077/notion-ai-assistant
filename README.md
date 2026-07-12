@@ -1,4 +1,4 @@
-# Content Prompter(in development)
+# Content Prompter
 
 A small, self-hosted desktop window that lets an AI agent generate content
 (headlines, sublines, quotes, tips, full content calendars) directly into a
