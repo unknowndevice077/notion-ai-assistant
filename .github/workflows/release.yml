@@ -15,7 +15,7 @@ jobs:
           - platform: macos-latest
             args: "--target universal-apple-darwin"
           - platform: windows-latest
-            args: "--target universal-apple-darwin"
+            args: ""
 
     runs-on: ${{ matrix.platform }}
 
@@ -43,7 +43,7 @@ jobs:
           BUILT_IN_OPENROUTER_KEY: ${{ secrets.BUILT_IN_OPENROUTER_KEY }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Content Prompter ${{ github.ref_name }}"
+          releaseName: "Notion Content Prompter ${{ github.ref_name }}"
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
