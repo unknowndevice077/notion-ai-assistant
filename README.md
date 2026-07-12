@@ -137,6 +137,11 @@ without them:
 npm run tauri icon path/to/your-1024x1024-icon.png
 ```
 
+## License
+
+This project is released under the MIT License. See [`LICENSE`](./LICENSE)
+for the full terms.
+
 ## Known follow-ups (called out honestly, not hidden)
 
 - **Notion database ID caching:** `push_batch_to_notion` currently re-lists

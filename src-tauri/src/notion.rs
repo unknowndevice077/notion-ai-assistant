@@ -104,9 +104,23 @@ impl NotionClient {
         parent_page_id: &str,
         business_name: &str,
         business_context: Option<&str>,
+        icon_emoji: &str,
+        tagline: Option<&str>,
         cover_image_url: Option<&str>,
     ) -> Result<String, NotionError> {
-        let mut children = vec![json!({
+        let mut children = Vec::new();
+
+        if let Some(tag) = tagline {
+            if !tag.trim().is_empty() {
+                children.push(json!({
+                    "object": "block",
+                    "type": "heading_2",
+                    "heading_2": { "rich_text": [{ "type": "text", "text": { "content": tag.trim() } }] }
+                }));
+            }
+        }
+
+        children.push(json!({
             "object": "block",
             "type": "callout",
             "callout": {
@@ -117,12 +131,8 @@ impl NotionClient {
                     "text": { "content": "Auto-generated content lives in the databases below, organized by type. Review and edit anything before it goes out — nothing here publishes on its own." }
                 }]
             }
-        })];
+        }));
 
-        // Keeping the business context visible on the page itself (not
-        // just in the app's local DB) is what lets this page be recognized
-        // and edited in-place later, and lets anyone opening it in Notion
-        // see what it's about at a glance.
         if let Some(ctx) = business_context {
             if !ctx.trim().is_empty() {
                 children.push(json!({
@@ -131,10 +141,7 @@ impl NotionClient {
                     "callout": {
                         "icon": { "type": "emoji", "emoji": "🏷️" },
                         "color": "gray_background",
-                        "rich_text": [{
-                            "type": "text",
-                            "text": { "content": format!("About this business: {}", ctx.trim()) }
-                        }]
+                        "rich_text": [{ "type": "text", "text": { "content": format!("About this business: {}", ctx.trim()) } }]
                     }
                 }));
             }
@@ -144,7 +151,7 @@ impl NotionClient {
 
         let mut payload = json!({
             "parent": { "page_id": parent_page_id },
-            "icon": { "type": "emoji", "emoji": "🗂️" },
+            "icon": { "type": "emoji", "emoji": icon_emoji },
             "properties": { "title": { "title": [{ "text": { "content": business_name } }] } },
             "children": children
         });
@@ -181,13 +188,10 @@ impl NotionClient {
             }));
             properties.insert("Platform".to_string(), json!({ "rich_text": {} }));
         } else {
-            // "Text" holds the short title (also mirrored into the page
-            // title itself), "Description" holds the longer body — this is
-            // what gives every headline/quote/tip a title *and* a
-            // description instead of a single blob of text.
-            properties.insert("Text".to_string(), json!({ "rich_text": {} }));
-            properties.insert("Description".to_string(), json!({ "rich_text": {} }));
-        }
+    // "Text" removed — it was just re-storing the same title already
+    // shown in "Name", which is what caused the duplicate-looking rows.
+    properties.insert("Description".to_string(), json!({ "rich_text": {} }));
+}
 
         let resp = self
             .client
@@ -206,23 +210,22 @@ impl NotionClient {
     }
 
     pub async fn add_database_row(&self, database_id: &str, title: &str, description: &str) -> Result<String, NotionError> {
-        let resp = self
-            .client
-            .post(format!("{NOTION_API_BASE}/pages"))
-            .headers(self.headers())
-            .json(&json!({
-                "parent": { "database_id": database_id },
-                "properties": {
-                    "Name": { "title": [{ "text": { "content": truncate(title, 200) } }] },
-                    "Text": { "rich_text": [{ "text": { "content": title } }] },
-                    "Description": { "rich_text": [{ "text": { "content": description } }] }
-                }
-            }))
-            .send()
-            .await?;
-        let body = self.handle(resp).await?;
-        Ok(body.get("id").and_then(|id| id.as_str()).unwrap_or_default().to_string())
-    }
+    let resp = self
+        .client
+        .post(format!("{NOTION_API_BASE}/pages"))
+        .headers(self.headers())
+        .json(&json!({
+            "parent": { "database_id": database_id },
+            "properties": {
+                "Name": { "title": [{ "text": { "content": truncate(title, 200) } }] },
+                "Description": { "rich_text": [{ "text": { "content": description } }] }
+            }
+        }))
+        .send()
+        .await?;
+    let body = self.handle(resp).await?;
+    Ok(body.get("id").and_then(|id| id.as_str()).unwrap_or_default().to_string())
+}
 
     pub async fn archive_page(&self, page_id: &str) -> Result<(), NotionError> {
         let resp = self

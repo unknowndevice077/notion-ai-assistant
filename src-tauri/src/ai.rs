@@ -28,6 +28,20 @@ impl AiError {
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct PageDesign {
+    pub emoji: String,
+    pub tagline: String,
+    pub unsplash_query: String,
+}
+
+const PAGE_DESIGN_SYSTEM_PROMPT: &str = r#"You design the visual identity for a Notion content hub page for a business. Given a business name and context, respond ONLY with a single JSON object, no prose, no markdown fences, matching exactly this shape:
+{
+  "emoji": "one single emoji that genuinely fits this specific business",
+  "tagline": "one short punchy sentence, under 12 words, capturing what this business actually does",
+  "unsplash_query": "a 2-4 word photo search query specific to this business (e.g. 'cozy coffee shop interior', not generic like 'business')"
+}"#;
+
 pub struct OpenAiCompatibleProvider {
     pub base_url: String,
     pub api_key: String,
@@ -128,6 +142,45 @@ impl OpenAiCompatibleProvider {
             .ok_or_else(|| AiError::Parse("missing choices[0].message.content".into()))?;
 
         parse_content_json(content)
+    }
+
+    pub async fn design_page(&self, business_name: &str, business_context: &str) -> Result<PageDesign, AiError> {
+        let user_prompt = format!(
+            "Business name: {business_name}\nBusiness context: {}",
+            if business_context.trim().is_empty() { "(none given)" } else { business_context }
+        );
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/chat/completions", self.base_url.trim_end_matches('/')))
+            .bearer_auth(&self.api_key)
+            .json(&json!({
+                "model": self.model,
+                "messages": [
+                    { "role": "system", "content": PAGE_DESIGN_SYSTEM_PROMPT },
+                    { "role": "user", "content": user_prompt }
+                ],
+                "temperature": 0.7,
+                "max_tokens": 200
+            }))
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let body_text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AiError::Provider(format!("{status}: {body_text}")));
+        }
+
+        let body: serde_json::Value = serde_json::from_str(&body_text)
+            .map_err(|e| AiError::Parse(format!("invalid response envelope: {e}")))?;
+        let content = body
+            .get("choices").and_then(|c| c.get(0)).and_then(|m| m.get("message")).and_then(|c| c.get("content"))
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| AiError::Parse("missing choices[0].message.content".into()))?;
+
+        let cleaned = content.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
+        serde_json::from_str::<PageDesign>(cleaned).map_err(|e| AiError::Parse(format!("{e}. Raw content: {cleaned}")))
     }
 }
 

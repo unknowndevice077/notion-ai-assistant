@@ -298,6 +298,7 @@ async fn ensure_business_hub(
     business_name: &str,
     business_context: &str,
 ) -> Result<(Business, TemplateDatabaseIds), String> {
+    let provider = active_provider(db).await?;
     let root_parent_id = ensure_root_parent(db, client).await?;
 
     let existing_business = {
@@ -323,9 +324,14 @@ async fn ensure_business_hub(
             } else {
                 format!("{business_name} {business_context}")
             };
+            let design = provider.design_page(business_name, business_context).await;
+            let (icon_emoji, tagline, cover_query) = match design {
+                Ok(d) => (d.emoji, Some(d.tagline), d.unsplash_query),
+                Err(_) => ("🗂️".to_string(), None, cover_query),
+            };
             let cover_url = crate::unsplash::fetch_cover_image(&cover_query).await;
             let id = client
-                .create_content_hub(&root_parent_id, business_name, Some(business_context), cover_url.as_deref())
+                .create_content_hub(&root_parent_id, business_name, Some(business_context), &icon_emoji, tagline.as_deref(), cover_url.as_deref())
                 .await
                 .map_err(|e| e.to_string())?;
             (id, true)
