@@ -3,7 +3,7 @@ import type { Business, ContentBatch, ModelInfo, OllamaStatus, Preset, Workspace
 
 export const api = {
   getSettings: () => invoke<WorkspaceSettings>("get_settings"),
-  saveSettings: (patch: Partial<WorkspaceSettings> & { byoApiKey?: string }) =>
+  saveSettings: (patch: Partial<WorkspaceSettings> & { byoApiKey?: string; unsplashApiKey?: string }) =>
     invoke<WorkspaceSettings>("save_settings", { patch }),
   getAvailableModels: () => invoke<ModelInfo[]>("get_available_models"),
   getOllamaStatus: () => invoke<OllamaStatus>("get_ollama_status"),

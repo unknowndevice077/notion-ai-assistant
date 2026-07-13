@@ -5,6 +5,7 @@ export interface WorkspaceSettings {
   selectedModelId: string;
   byoModel: string;
   byoKeySet: boolean;
+  unsplashKeySet: boolean;
 }
 
 export interface ModelInfo {

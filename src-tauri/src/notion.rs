@@ -120,19 +120,6 @@ impl NotionClient {
             }
         }
 
-        children.push(json!({
-            "object": "block",
-            "type": "callout",
-            "callout": {
-                "icon": { "type": "emoji", "emoji": "✨" },
-                "color": "blue_background",
-                "rich_text": [{
-                    "type": "text",
-                    "text": { "content": "Auto-generated content lives in the databases below, organized by type. Review and edit anything before it goes out — nothing here publishes on its own." }
-                }]
-            }
-        }));
-
         if let Some(ctx) = business_context {
             if !ctx.trim().is_empty() {
                 children.push(json!({

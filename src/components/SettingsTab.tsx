@@ -37,6 +37,7 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
   const [ollama, setOllama] = useState<OllamaStatus | null>(null);
   const [notionToken, setNotionToken] = useState("");
   const [byoKey, setByoKey] = useState("");
+  const [unsplashKey, setUnsplashKey] = useState("");
   const [byoModelDraft, setByoModelDraft] = useState(settings?.byoModel ?? "");
   const [status, setStatus] = useState<string | null>(null);
   const [notionTestStatus, setNotionTestStatus] = useState<string | null>(null);
@@ -45,6 +46,10 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
   const [testingAi, setTestingAi] = useState(false);
   const [pullingId, setPullingId] = useState<string | null>(null);
   const [manualAgentEditOpen, setManualAgentEditOpen] = useState<boolean | null>(null);
+  // Same collapse/edit pattern as the AI Agent section: null = "auto"
+  // (open the key field until one's saved, then collapse to a summary).
+  const [manualUnsplashEditOpen, setManualUnsplashEditOpen] = useState<boolean | null>(null);
+  const [manualNotionEditOpen, setManualNotionEditOpen] = useState(false);
 
   const refreshModels = () => {
     api.getAvailableModels().then(setModels).catch(() => setModels([]));
@@ -79,7 +84,10 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
     return <div className="flex h-full items-center justify-center text-sm text-ink-40">Loading settings…</div>;
   }
 
-  const patch = async (p: Partial<WorkspaceSettings> & { byoApiKey?: string }) => {
+  // Fixed: this type now matches api.ts's saveSettings signature exactly
+  // (byoApiKey AND unsplashApiKey) — the mismatch between this local type
+  // and api.ts's is exactly what caused the TS2353 build error.
+  const patch = async (p: Partial<WorkspaceSettings> & { byoApiKey?: string; unsplashApiKey?: string }) => {
     const updated = await api.saveSettings(p);
     onSettingsChange(updated);
     return updated;
@@ -93,6 +101,7 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
       if (res.ok) {
         await refreshSettings();
         setNotionToken("");
+        setManualNotionEditOpen(false);
       }
     } catch (err) {
       setStatus(String(err));
@@ -141,6 +150,12 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
     setByoKey("");
   };
 
+  const saveUnsplashKey = async () => {
+    await patch({ unsplashApiKey: unsplashKey });
+    setUnsplashKey("");
+    setManualUnsplashEditOpen(false);
+  };
+
   const selectedLocal = localModels.find((m) => m.id === settings.selectedModelId);
   const selectedCloud = cloudModels.find((m) => m.id === settings.selectedModelId);
   const needsDownload = selectedLocal?.status === "pull_required";
@@ -160,6 +175,7 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
       : "No API key set";
 
   const agentEditOpen = manualAgentEditOpen ?? !agentConnected;
+  const unsplashEditOpen = manualUnsplashEditOpen ?? !settings.unsplashKeySet;
   const testButtonLabel = settings.aiProvider === "byo" ? "Test API key" : "Test connection";
 
   const providerButtonClass = (id: WorkspaceSettings["aiProvider"]) =>
@@ -170,12 +186,17 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
       <Section title="Notion">
-        {settings.notionConnected ? (
+        {settings.notionConnected && !manualNotionEditOpen ? (
           <div className="flex items-center justify-between">
             <span className="text-sm text-emerald-400">Connected ✓</span>
-            <button onClick={testNotion} disabled={testingNotion} className={secondaryButtonClass}>
-              {testingNotion ? "Testing…" : "Test connection"}
-            </button>
+            <div className="flex gap-2">
+              <button onClick={testNotion} disabled={testingNotion} className={secondaryButtonClass}>
+                {testingNotion ? "Testing…" : "Test connection"}
+              </button>
+              <button onClick={() => setManualNotionEditOpen(true)} className={secondaryButtonClass}>
+                Edit
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -194,13 +215,26 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
                 placeholder="secret_..."
               />
             </Field>
-            <button
-              onClick={connectNotion}
-              disabled={!notionToken.trim()}
-              className="self-start rounded-sm bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-40"
-            >
-              Connect
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={connectNotion}
+                disabled={!notionToken.trim()}
+                className="self-start rounded-sm bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-40"
+              >
+                {settings.notionConnected ? "Reconnect" : "Connect"}
+              </button>
+              {settings.notionConnected && (
+                <button
+                  onClick={() => {
+                    setManualNotionEditOpen(false);
+                    setNotionToken("");
+                  }}
+                  className="text-xs text-ink-40 underline hover:text-ink-100"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </>
         )}
         {notionTestStatus && <p className="text-xs text-ink-70">{notionTestStatus}</p>}
@@ -384,6 +418,51 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
         )}
 
         {aiTestStatus && <p className="text-xs text-ink-70">{aiTestStatus}</p>}
+      </Section>
+
+      {/* Now matches the Notion/AI Agent pattern: collapses to a
+          "Connected ✓" summary with an Edit button once a key is saved,
+          instead of always showing the input field. */}
+      <Section title="Cover Images">
+        {!unsplashEditOpen ? (
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-emerald-400">Connected ✓</span>
+            <button onClick={() => setManualUnsplashEditOpen(true)} className={secondaryButtonClass}>
+              Edit
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-ink-70">
+              When set, business pages get an AI-picked, context-relevant cover photo from Unsplash. Without a
+              key, pages are created with no cover — a plain page instead of a random stock photo.
+            </p>
+            <Field label={`Unsplash API key ${settings.unsplashKeySet ? "(set — leave blank to keep)" : ""}`}>
+              <input
+                className={inputClass}
+                type="password"
+                value={unsplashKey}
+                onChange={(e) => setUnsplashKey(e.target.value)}
+                placeholder="your Unsplash access key"
+              />
+            </Field>
+            <div className="flex items-center justify-between">
+              <a href="https://unsplash.com/developers" target="_blank" rel="noreferrer" className="text-xs text-accent underline">
+                Get a free key →
+              </a>
+              <div className="flex gap-2">
+                {settings.unsplashKeySet && (
+                  <button onClick={() => setManualUnsplashEditOpen(false)} className="text-xs text-ink-40 underline hover:text-ink-100">
+                    Cancel
+                  </button>
+                )}
+                <button onClick={saveUnsplashKey} disabled={!unsplashKey.trim()} className={secondaryButtonClass}>
+                  Save key
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </Section>
 
       {status && <p className="font-mono text-xs text-ink-40">{status}</p>}

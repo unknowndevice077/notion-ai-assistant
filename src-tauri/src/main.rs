@@ -34,6 +34,7 @@ fn main() {
     db::init(&conn).expect("failed to initialize database schema");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(Db(Mutex::new(conn)))
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,

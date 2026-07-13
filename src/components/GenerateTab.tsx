@@ -21,6 +21,17 @@ const TYPE_LABEL_PLURAL: Record<string, string> = {
   calendar: "calendar entries",
 };
 
+// One accent color per content type — mirrors the select-option colors
+// used in the actual Notion Content Calendar, so the app visually matches
+// what you'll see there.
+const TYPE_ACCENT: Record<string, string> = {
+  headline: "border-l-sky-500 text-sky-400",
+  subline: "border-l-violet-500 text-violet-400",
+  quote: "border-l-pink-500 text-pink-400",
+  tip: "border-l-amber-500 text-amber-400",
+  calendar: "border-l-teal-500 text-teal-400",
+};
+
 const BUSY_STAGES = ["Reading your request…", "Thinking it through…", "Drafting content…", "Pushing to Notion…"];
 const STAGE_ADVANCE_MS = [1100, 2400, 2600];
 
@@ -68,6 +79,17 @@ export default function GenerateTab() {
     busyStageIdx === BUSY_STAGES.length - 1 && busyElapsed > 3
       ? `${BUSY_STAGES[busyStageIdx]} (${busyElapsed}s)`
       : BUSY_STAGES[busyStageIdx];
+
+  // Wipes the current result off the screen — a fresh generate/preset run
+  // always REPLACES this state already (setBatch(result) overwrites, it
+  // never appends), but there was no way to just clear it and go back to
+  // a blank canvas without kicking off a new request. This is that.
+  const clearResults = () => {
+    setBatch(null);
+    setError(null);
+    setDecided(false);
+    setExpandedIdx(null);
+  };
 
   const runCommand = async (command: string) => {
     setBusy(true);
@@ -134,7 +156,7 @@ export default function GenerateTab() {
     <div className="flex h-full flex-col bg-surface-0 min-h-0">
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 min-h-0 space-y-3">
         {busy && (
-          <div className="flex items-center gap-2.5 rounded-lg border border-accent/40 bg-accent-muted/30 px-3 py-2.5">
+          <div className="flex items-center gap-2.5 rounded-xl border border-accent/40 bg-accent-muted/30 px-3.5 py-3 shadow-sm">
             <span className="relative flex h-2 w-2 shrink-0">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
@@ -144,37 +166,50 @@ export default function GenerateTab() {
         )}
 
         {error && !isNotion404 && (
-          <div className="rounded-lg border border-red-900 bg-red-950/40 px-3 py-2.5 text-xs text-red-300 font-mono">
+          <div className="rounded-xl border border-red-900 bg-red-950/40 px-3.5 py-3 text-xs text-red-300 font-mono shadow-sm">
             <span className="font-bold uppercase">[ Error ]</span> {error}
           </div>
         )}
 
         {batch && (
-          <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-1 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2 shrink-0">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-ink-40 font-mono">
-                {batch.items.length} items {wasPushed ? "— live in Notion" : "— not pushed"}
-              </span>
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-1 p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-muted text-[11px] font-bold text-accent font-mono">
+                  {batch.items.length}
+                </span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-70 font-mono">
+                  items {wasPushed ? "— live in Notion" : "— not pushed"}
+                </span>
+              </div>
 
-              {wasPushed && !decided && (
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    onClick={acceptPush}
-                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    onClick={declinePush}
-                    disabled={discarding}
-                    className="rounded-md border border-red-900 bg-red-950/40 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-950/60 disabled:opacity-40 transition-colors"
-                  >
-                    {discarding ? "Removing…" : "Decline"}
-                  </button>
-                </div>
-              )}
-
-              {wasPushed && decided && <span className="text-xs font-medium text-emerald-400">Accepted ✓</span>}
+              <div className="flex shrink-0 items-center gap-2">
+                {wasPushed && !decided && (
+                  <>
+                    <button
+                      onClick={acceptPush}
+                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={declinePush}
+                      disabled={discarding}
+                      className="rounded-md border border-red-900 bg-red-950/40 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-950/60 disabled:opacity-40 transition-colors"
+                    >
+                      {discarding ? "Removing…" : "Decline"}
+                    </button>
+                  </>
+                )}
+                {wasPushed && decided && <span className="text-xs font-medium text-emerald-400">Accepted ✓</span>}
+                <button
+                  onClick={clearResults}
+                  title="Clear this result"
+                  className="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-xs font-medium text-ink-40 transition-colors hover:border-border-strong hover:text-ink-100"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
 
             {/* Real reason the push failed, straight from the backend —
@@ -201,10 +236,13 @@ export default function GenerateTab() {
               </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-surface-2 px-2.5 py-2">
+            <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-2.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-ink-40 font-mono mr-1">Report:</span>
               {Object.entries(typeCounts).map(([type, count]) => (
-                <span key={type} className="rounded-sm border border-border bg-surface-1 px-1.5 py-0.5 text-[10px] font-mono text-ink-70">
+                <span
+                  key={type}
+                  className={`rounded-full border border-border bg-surface-1 px-2 py-0.5 text-[10px] font-mono font-medium ${TYPE_ACCENT[type]?.split(" ")[1] ?? "text-ink-70"}`}
+                >
                   {count} {TYPE_LABEL_PLURAL[type] ?? type}
                 </span>
               ))}
@@ -214,13 +252,14 @@ export default function GenerateTab() {
             <div className="space-y-2">
               {batch.items.map((item, idx) => {
                 const expanded = expandedIdx === idx;
+                const accent = TYPE_ACCENT[item.type] ?? "border-l-ink-40 text-ink-70";
                 return (
                   <div
                     key={idx}
                     onClick={() => setExpandedIdx(expanded ? null : idx)}
-                    className="cursor-pointer rounded-md border border-border bg-surface-2 px-3 py-2.5 transition-colors hover:border-border-strong"
+                    className={`cursor-pointer rounded-md border border-border border-l-[3px] bg-surface-2 px-3 py-2.5 shadow-sm transition-all hover:border-border-strong hover:shadow-md ${accent}`}
                   >
-                    <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider text-accent font-mono mb-1">
+                    <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider font-mono mb-1">
                       <span className="truncate">{TYPE_LABEL[item.type] ?? item.type}</span>
                       <span className="shrink-0 text-ink-40">{expanded ? "▲" : "▼"}</span>
                     </div>
@@ -243,9 +282,9 @@ export default function GenerateTab() {
         )}
 
         {!batch && !error && !busy && (
-          <div className="flex h-full flex-col items-center justify-center text-center text-xs text-ink-40 py-12">
-            <div className="text-2xl mb-2 opacity-40">📡</div>
-            <span className="font-semibold uppercase tracking-wider block mb-1">Awaiting Instructions</span>
+          <div className="flex h-full flex-col items-center justify-center text-center text-xs text-ink-40 py-12 rounded-xl border border-dashed border-border">
+            <div className="text-3xl mb-3 opacity-40">📡</div>
+            <span className="font-semibold uppercase tracking-wider block mb-1 text-ink-70">Awaiting Instructions</span>
             Use a preset above, or tell the agent what you need.
           </div>
         )}

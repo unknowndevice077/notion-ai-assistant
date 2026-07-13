@@ -9,6 +9,10 @@ pub struct WorkspaceSettings {
     pub selected_model_id: String,
     pub byo_model: String,
     pub byo_key_set: bool,
+    /// Whether the user has saved their own Unsplash API key in Settings.
+    /// If false (and no build-time key was baked in), business pages
+    /// simply get no cover image instead of a random stock photo.
+    pub unsplash_key_set: bool,
 }
 
 impl Default for WorkspaceSettings {
@@ -20,6 +24,7 @@ impl Default for WorkspaceSettings {
             selected_model_id: crate::model_registry::recommended_local_model_id(),
             byo_model: "deepseek/deepseek-v4-flash".to_string(),
             byo_key_set: false,
+            unsplash_key_set: false,
         }
     }
 }
@@ -31,6 +36,7 @@ pub struct SettingsPatch {
     pub selected_model_id: Option<String>,
     pub byo_model: Option<String>,
     pub byo_api_key: Option<String>,
+    pub unsplash_api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

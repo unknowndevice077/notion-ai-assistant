@@ -120,6 +120,9 @@ pub fn load_settings(conn: &Connection) -> WorkspaceSettings {
     if let Some(v) = get_setting(conn, "byo_key_set") {
         s.byo_key_set = v == "true";
     }
+    if let Some(v) = get_setting(conn, "unsplash_key_set") {
+        s.unsplash_key_set = v == "true";
+    }
     s
 }
 

@@ -11,6 +11,7 @@ use uuid::Uuid;
 const KEYRING_SERVICE: &str = "content-prompter";
 const NOTION_TOKEN_KEY: &str = "notion_token";
 const BYO_API_KEY: &str = "byo_api_key";
+const UNSPLASH_USER_KEY: &str = "unsplash_api_key";
 
 fn built_in_openrouter_key() -> String {
     option_env!("BUILT_IN_OPENROUTER_KEY").unwrap_or("").to_string()
@@ -46,6 +47,12 @@ pub fn save_settings(db: State<Db>, patch: SettingsPatch) -> Result<WorkspaceSet
         if !v.is_empty() {
             keyring_set(BYO_API_KEY, v)?;
             db::set_setting(&conn, "byo_key_set", "true").map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(v) = &patch.unsplash_api_key {
+        if !v.is_empty() {
+            keyring_set(UNSPLASH_USER_KEY, v)?;
+            db::set_setting(&conn, "unsplash_key_set", "true").map_err(|e| e.to_string())?;
         }
     }
     Ok(db::load_settings(&conn))
@@ -202,7 +209,7 @@ fn new_batch(items: Vec<ContentItem>) -> ContentBatch {
 /// exactly that many entries, spread exactly that way across days,
 /// regardless of what the model itself produced for a "calendar" section
 /// (which is ignored / never requested from the model at all now).
-fn normalize_calendar_entries(items: &mut Vec<ContentItem>, days: usize, headlines_per_day: usize, quotes_per_day: usize, tips_per_day: usize) {
+fn normalize_calendar_entries(items: &mut Vec<ContentItem>, start_date: chrono::NaiveDate, days: usize, headlines_per_day: usize, quotes_per_day: usize, tips_per_day: usize) {
     items.retain(|i| i.item_type != "calendar");
 
     let headlines: Vec<ContentItem> = items.iter().filter(|i| i.item_type == "headline").cloned().collect();
@@ -213,7 +220,6 @@ fn normalize_calendar_entries(items: &mut Vec<ContentItem>, days: usize, headlin
         return;
     }
 
-    let today = Local::now().date_naive();
     let days = days.max(1);
     let mut calendar_entries = Vec::new();
 
@@ -222,7 +228,7 @@ fn normalize_calendar_entries(items: &mut Vec<ContentItem>, days: usize, headlin
             return;
         }
         for day in 0..days {
-            let date = (today + Duration::days(day as i64)).format("%Y-%m-%d").to_string();
+            let date = (start_date + Duration::days(day as i64)).format("%Y-%m-%d").to_string();
             let start = day * per_day;
             let end = ((day + 1) * per_day).min(source.len());
             if start >= source.len() {
@@ -329,7 +335,7 @@ async fn ensure_business_hub(
                 Ok(d) => (d.emoji, Some(d.tagline), d.unsplash_query),
                 Err(_) => ("🗂️".to_string(), None, cover_query),
             };
-            let cover_url = crate::unsplash::fetch_cover_image(&cover_query).await;
+            let cover_url = crate::unsplash::fetch_cover_image(&cover_query, keyring_get(UNSPLASH_USER_KEY).as_deref()).await;
             let id = client
                 .create_content_hub(&root_parent_id, business_name, Some(business_context), &icon_emoji, tagline.as_deref(), cover_url.as_deref())
                 .await
@@ -392,16 +398,17 @@ async fn resolve_template_database_ids(client: &NotionClient, hub_id: &str) -> R
 }
 
 /// How to bucket generated items into the calendar. `days` × each
-/// per-day count is the exact expected total for that content type.
+/// per-day count is the exact expected total for that content type,
+/// starting from `start_date` (day 1 = start_date, day 2 = start_date+1, …).
 #[derive(Clone, Copy)]
-struct CalendarShape { days: usize, headlines_per_day: usize, quotes_per_day: usize, tips_per_day: usize }
+struct CalendarShape { start_date: chrono::NaiveDate, days: usize, headlines_per_day: usize, quotes_per_day: usize, tips_per_day: usize }
 
 impl Default for CalendarShape {
-    // Free-form (non-preset) prompts: everything lands on a single day,
-    // sized to however many items actually came back — same behavior as
-    // before per-day counts existed.
+    // Free-form (non-preset) prompts: everything lands on a single day
+    // starting today, sized to however many items actually came back —
+    // same behavior as before per-day counts existed.
     fn default() -> Self {
-        Self { days: 1, headlines_per_day: usize::MAX, quotes_per_day: usize::MAX, tips_per_day: usize::MAX }
+        Self { start_date: Local::now().date_naive(), days: 1, headlines_per_day: usize::MAX, quotes_per_day: usize::MAX, tips_per_day: usize::MAX }
     }
 }
 
@@ -415,8 +422,112 @@ async fn execute_and_push(
     let provider = active_provider(db).await?;
     let mut items = generate_with_safe_fallback(&provider, &prompt).await.map_err(|e| e.to_string())?;
 
-    normalize_calendar_entries(&mut items, shape.days, shape.headlines_per_day, shape.quotes_per_day, shape.tips_per_day);
+    normalize_calendar_entries(&mut items, shape.start_date, shape.days, shape.headlines_per_day, shape.quotes_per_day, shape.tips_per_day);
 
+    push_items(db, items, &business_name, &business_context).await
+}
+
+fn calendar_entry_for(item: &ContentItem, date: &chrono::NaiveDate, content_type: &str) -> ContentItem {
+    ContentItem {
+        item_type: "calendar".to_string(),
+        title: item.title.clone(),
+        text: item.text.clone(),
+        date: Some(date.format("%Y-%m-%d").to_string()),
+        platform: None,
+        content_type: Some(content_type.to_string()),
+    }
+}
+
+/// How many times to re-ask the model for a single day's content before
+/// giving up and accepting whatever it managed to produce.
+const MAX_DAY_ATTEMPTS: usize = 5;
+
+/// Generates content ONE CALENDAR DAY AT A TIME instead of asking the
+/// model for the entire multi-day batch in a single request. Asking a
+/// (often small, local) model for e.g. 10 days × 5 headlines/quotes/tips —
+/// 150 items in one JSON blob — is exactly what was causing it to quietly
+/// under-deliver. A per-day request only needs ~15-20 items.
+///
+/// Per day, this also self-corrects the count instead of trusting the
+/// model on the first try: if a type comes back short, it asks again and
+/// accumulates across attempts (up to MAX_DAY_ATTEMPTS) until there's
+/// enough; if a type comes back over, the excess is simply cut. So the
+/// final count per day is always EXACTLY headlines_per_day /
+/// quotes_per_day / tips_per_day whenever the model can produce that many
+/// across its retries, and never more.
+async fn generate_days(
+    db: &Db,
+    template: &str,
+    business_name: &str,
+    business_context_clause: &str,
+    start_date: chrono::NaiveDate,
+    days: usize,
+    headlines_per_day: usize,
+    quotes_per_day: usize,
+    tips_per_day: usize,
+) -> Result<Vec<ContentItem>, String> {
+    let provider = active_provider(db).await?;
+    let mut all_items: Vec<ContentItem> = Vec::new();
+
+    for day_idx in 0..days.max(1) {
+        let day_date = start_date + Duration::days(day_idx as i64);
+        let day_prompt = template
+            .replace("{business_name}", business_name)
+            .replace("{business_context}", business_context_clause)
+            .replace("{amount}", "1")
+            .replace("{start_date}", &day_date.format("%Y-%m-%d").to_string())
+            .replace("{headlines}", &headlines_per_day.to_string())
+            .replace("{quotes}", &quotes_per_day.to_string())
+            .replace("{tips}", &tips_per_day.to_string());
+
+        let mut headlines: Vec<ContentItem> = Vec::new();
+        let mut sublines: Vec<ContentItem> = Vec::new();
+        let mut quotes: Vec<ContentItem> = Vec::new();
+        let mut tips: Vec<ContentItem> = Vec::new();
+
+        for _attempt in 0..MAX_DAY_ATTEMPTS {
+            let have_enough = headlines.len() >= headlines_per_day && quotes.len() >= quotes_per_day && tips.len() >= tips_per_day;
+            if have_enough {
+                break;
+            }
+
+            let day_items = generate_with_safe_fallback(&provider, &day_prompt).await.map_err(|e| e.to_string())?;
+            headlines.extend(day_items.iter().filter(|i| i.item_type == "headline").cloned());
+            sublines.extend(day_items.iter().filter(|i| i.item_type == "subline").cloned());
+            quotes.extend(day_items.iter().filter(|i| i.item_type == "quote").cloned());
+            tips.extend(day_items.iter().filter(|i| i.item_type == "tip").cloned());
+        }
+
+        // Cut any overshoot (whether from one generous attempt or piled up
+        // across retries) down to exactly what was asked for.
+        let headlines: Vec<ContentItem> = headlines.into_iter().take(headlines_per_day).collect();
+        let sublines: Vec<ContentItem> = sublines.into_iter().take(headlines_per_day).collect();
+        let quotes: Vec<ContentItem> = quotes.into_iter().take(quotes_per_day).collect();
+        let tips: Vec<ContentItem> = tips.into_iter().take(tips_per_day).collect();
+
+        for h in &headlines {
+            all_items.push(calendar_entry_for(h, &day_date, "headline"));
+        }
+        for q in &quotes {
+            all_items.push(calendar_entry_for(q, &day_date, "quote"));
+        }
+        for t in &tips {
+            all_items.push(calendar_entry_for(t, &day_date, "tip"));
+        }
+
+        all_items.extend(headlines);
+        all_items.extend(sublines);
+        all_items.extend(quotes);
+        all_items.extend(tips);
+    }
+
+    Ok(all_items)
+}
+
+/// Pushes an already-built list of items to Notion and saves the batch.
+/// Shared by the single-shot path (execute_and_push) and the day-by-day
+/// preset path (run_preset).
+async fn push_items(db: &Db, items: Vec<ContentItem>, business_name: &str, business_context: &str) -> Result<ContentBatch, String> {
     let mut batch = new_batch(items);
 
     // Every failure branch below sets push_error to the REAL reason instead
@@ -426,7 +537,7 @@ async fn execute_and_push(
         None => Some("Notion isn't connected. Go to Settings and connect it, then try again.".to_string()),
         Some(token) => {
             let client = NotionClient::new(token);
-            match ensure_business_hub(db, &client, &business_name, &business_context).await {
+            match ensure_business_hub(db, &client, business_name, business_context).await {
                 Err(e) => Some(format!("Couldn't set up the Notion page for \"{business_name}\": {e}")),
                 Ok((_business, db_ids)) => {
                     let mut page_ids = Vec::new();
@@ -496,14 +607,17 @@ pub async fn run_preset(db: State<'_, Db>, preset_id: String, field_values: Hash
     let headlines = field_values.get("Headlines").cloned().unwrap_or_else(|| "5".to_string());
     let quotes = field_values.get("Quotes").cloned().unwrap_or_else(|| "5".to_string());
     let tips = field_values.get("Tips").cloned().unwrap_or_else(|| "5".to_string());
+    let start_date_raw = field_values.get("Start Date").cloned().unwrap_or_default();
 
     // "Amount of content" on the Business preset is DAYS worth of content —
     // headlines/quotes/tips fields are the exact per-day counts, so total
-    // generated = days × each.
+    // generated = days × each, dated starting from "Start Date" (defaults
+    // to today if left blank/unparsable).
     let days: usize = amount.trim().parse().unwrap_or(1).max(1);
     let headlines_per_day: usize = headlines.trim().parse().unwrap_or(5);
     let quotes_per_day: usize = quotes.trim().parse().unwrap_or(5);
     let tips_per_day: usize = tips.trim().parse().unwrap_or(5);
+    let start_date = chrono::NaiveDate::parse_from_str(start_date_raw.trim(), "%Y-%m-%d").unwrap_or_else(|_| Local::now().date_naive());
 
     let business_context_clause = if business_context.trim().is_empty() {
         String::new()
@@ -511,24 +625,53 @@ pub async fn run_preset(db: State<'_, Db>, preset_id: String, field_values: Hash
         format!("Business context — what this business is about: {}. ", business_context.trim())
     };
 
-    let prompt = template
-        .replace("{business_name}", &business_name)
-        .replace("{business_context}", &business_context_clause)
-        .replace("{amount}", &days.to_string())
-        .replace("{headlines}", &headlines_per_day.to_string())
-        .replace("{quotes}", &quotes_per_day.to_string())
-        .replace("{tips}", &tips_per_day.to_string());
+    let items = generate_days(
+        db.inner(),
+        &template,
+        &business_name,
+        &business_context_clause,
+        start_date,
+        days,
+        headlines_per_day,
+        quotes_per_day,
+        tips_per_day,
+    )
+    .await?;
 
-    let shape = CalendarShape { days, headlines_per_day, quotes_per_day, tips_per_day };
-    execute_and_push(db.inner(), prompt, business_name, business_context, shape).await
+    push_items(db.inner(), items, &business_name, &business_context).await
 }
 
 /// Lists all businesses/child pages the app knows about, for the "edit an
-/// existing business page" dropdown.
+/// existing business page" dropdown — but first verifies each one's page
+/// still actually exists in Notion, silently dropping (and forgetting)
+/// any that were deleted there, instead of showing stale entries forever.
 #[tauri::command]
-pub fn list_businesses(db: State<Db>) -> Result<Vec<Business>, String> {
-    let conn = db.inner().0.lock().unwrap();
-    db::list_businesses(&conn).map_err(|e| e.to_string())
+pub async fn list_businesses(db: State<'_, Db>) -> Result<Vec<Business>, String> {
+    let businesses = {
+        let conn = db.inner().0.lock().unwrap();
+        db::list_businesses(&conn).map_err(|e| e.to_string())?
+    };
+
+    let Some(token) = keyring_get(NOTION_TOKEN_KEY) else {
+        // Can't verify without a Notion connection — show what we have
+        // locally rather than hiding everything.
+        return Ok(businesses);
+    };
+
+    let client = NotionClient::new(token);
+    let mut alive = Vec::new();
+    for business in businesses {
+        match client.page_exists(&business.hub_page_id).await {
+            Ok(true) => alive.push(business),
+            Ok(false) => {
+                let conn = db.inner().0.lock().unwrap();
+                let _ = db::delete_business(&conn, &business.id);
+            }
+            // A network/auth hiccup shouldn't make a real business vanish.
+            Err(_) => alive.push(business),
+        }
+    }
+    Ok(alive)
 }
 
 /// Prompts the AI scoped to a single, already-existing business page —
