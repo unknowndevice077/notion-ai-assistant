@@ -57,7 +57,6 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
   };
 
   const localModels = models.filter((m) => m.source === "local");
-  const cloudModels = models.filter((m) => m.source === "cloud");
 
   useEffect(() => {
     refreshModels();
@@ -157,19 +156,15 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
   };
 
   const selectedLocal = localModels.find((m) => m.id === settings.selectedModelId);
-  const selectedCloud = cloudModels.find((m) => m.id === settings.selectedModelId);
   const needsDownload = selectedLocal?.status === "pull_required";
 
   const agentConnected =
     (settings.aiProvider === "local" && selectedLocal?.status === "ready") ||
-    (settings.aiProvider === "cloud" && !!selectedCloud) ||
     (settings.aiProvider === "byo" && settings.byoKeySet && !!settings.byoModel);
 
   const agentSummaryLabel =
     settings.aiProvider === "local"
       ? selectedLocal?.label ?? "No local agent selected"
-      : settings.aiProvider === "cloud"
-      ? selectedCloud?.label ?? "No cloud model selected"
       : settings.byoModel
       ? `${settings.byoModel} · custom API key`
       : "No API key set";
@@ -264,9 +259,6 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
               <button onClick={() => patch({ aiProvider: "local" })} className={providerButtonClass("local")}>
                 Local (Ollama)
               </button>
-              <button onClick={() => patch({ aiProvider: "cloud" })} className={providerButtonClass("cloud")}>
-                Built-in cloud
-              </button>
               <button onClick={() => patch({ aiProvider: "byo" })} className={providerButtonClass("byo")}>
                 My own API key
               </button>
@@ -339,22 +331,6 @@ export default function SettingsTab({ settings, onSettingsChange, refreshSetting
                   Browse more agents / models (Ollama library) →
                 </a>
               </>
-            )}
-
-            {settings.aiProvider === "cloud" && (
-              <div className="flex flex-col gap-1.5">
-                {cloudModels.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => patch({ selectedModelId: m.id })}
-                    className={`rounded-sm border px-2.5 py-2 text-left text-sm ${
-                      settings.selectedModelId === m.id ? "border-accent bg-accent-muted text-ink-100" : "border-border bg-surface-2 text-ink-70"
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
             )}
 
             {settings.aiProvider === "byo" && (

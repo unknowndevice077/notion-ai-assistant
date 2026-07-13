@@ -1,7 +1,7 @@
 export interface WorkspaceSettings {
   notionConnected: boolean;
   notionParentPageId: string | null;
-  aiProvider: "local" | "cloud" | "byo";
+  aiProvider: "local" | "byo";
   selectedModelId: string;
   byoModel: string;
   byoKeySet: boolean;
@@ -11,7 +11,7 @@ export interface WorkspaceSettings {
 export interface ModelInfo {
   id: string;
   label: string;
-  source: "local" | "cloud";
+  source: "local";
   status: "ready" | "pull_required" | "insufficient_ram" | "not_installed" | "available";
   detail: string;
   recommended: boolean;

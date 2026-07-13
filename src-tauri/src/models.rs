@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct WorkspaceSettings {
     pub notion_connected: bool,
     pub notion_parent_page_id: Option<String>,
-    pub ai_provider: String, // "local" | "cloud" | "byo"
+    pub ai_provider: String, // "local" | "byo"
     pub selected_model_id: String,
     pub byo_model: String,
     pub byo_key_set: bool,

@@ -14,7 +14,6 @@ pub struct ModelInfo {
 }
 
 struct LocalModelSpec { id: &'static str, label: &'static str, min_ram_gb: u32 }
-struct CloudModelSpec { id: &'static str, label: &'static str }
 
 pub const DEFAULT_MODEL_ID: &str = "llama3.2:3b";
 pub const LEGACY_HEAVY_MODEL_ID: &str = "deepseek-coder-v2:16b";
@@ -32,12 +31,6 @@ const LOCAL_CATALOG: [LocalModelSpec; 12] = [
     LocalModelSpec { id: "gemma2:9b",       label: "Gemma 2 9B — balanced",                    min_ram_gb: 8 },
     LocalModelSpec { id: "deepseek-r1:14b", label: "DeepSeek R1 14B — stronger reasoning",     min_ram_gb: 16 },
     LocalModelSpec { id: "qwen2.5:14b",     label: "Qwen 2.5 14B",                             min_ram_gb: 16 },
-];
-
-const CLOUD_CATALOG: [CloudModelSpec; 3] = [
-    CloudModelSpec { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash (cloud, low-cost)" },
-    CloudModelSpec { id: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B Instruct (cloud)" },
-    CloudModelSpec { id: "openai/gpt-4o-mini", label: "GPT-4o mini (cloud)" },
 ];
 
 fn total_ram_gb() -> f64 {
@@ -96,15 +89,6 @@ pub fn list_models(ollama: &OllamaStatus) -> Vec<ModelInfo> {
             }
         })
         .collect();
-
-    models.extend(CLOUD_CATALOG.iter().map(|spec| ModelInfo {
-        id: spec.id.to_string(),
-        label: spec.label.to_string(),
-        source: "cloud".to_string(),
-        status: "available".to_string(),
-        detail: "Runs through the app's cloud AI connection — no download, no local compute.".to_string(),
-        recommended: false,
-    }));
 
     // The curated catalog above is a set of suggestions, not the full
     // picture — surface anything the user has actually pulled via Ollama

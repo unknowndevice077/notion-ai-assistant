@@ -13,10 +13,6 @@ const NOTION_TOKEN_KEY: &str = "notion_token";
 const BYO_API_KEY: &str = "byo_api_key";
 const UNSPLASH_USER_KEY: &str = "unsplash_api_key";
 
-fn built_in_openrouter_key() -> String {
-    option_env!("BUILT_IN_OPENROUTER_KEY").unwrap_or("").to_string()
-}
-
 fn keyring_get(key: &str) -> Option<String> {
     Entry::new(KEYRING_SERVICE, key).ok()?.get_password().ok()
 }
@@ -155,13 +151,6 @@ async fn active_provider(db: &Db) -> Result<OpenAiCompatibleProvider, String> {
         "byo" => {
             let key = keyring_get(BYO_API_KEY).ok_or("No API key saved yet — add one in Settings.".to_string())?;
             Ok(OpenAiCompatibleProvider { base_url: "https://openrouter.ai/api/v1".to_string(), api_key: key, model: settings.byo_model })
-        }
-        "cloud" => {
-            let key = built_in_openrouter_key();
-            if key.is_empty() {
-                return Err("Built-in cloud AI key isn't configured in this build. Use a local model, or your own key in Settings.".to_string());
-            }
-            Ok(OpenAiCompatibleProvider { base_url: "https://openrouter.ai/api/v1".to_string(), api_key: key, model: settings.selected_model_id })
         }
         _ => {
             let status = crate::ollama::check_status().await;
@@ -496,6 +485,28 @@ async fn generate_days(
             sublines.extend(day_items.iter().filter(|i| i.item_type == "subline").cloned());
             quotes.extend(day_items.iter().filter(|i| i.item_type == "quote").cloned());
             tips.extend(day_items.iter().filter(|i| i.item_type == "tip").cloned());
+        }
+
+        // If, even after every retry, a type is still short, don't quietly
+        // ship a wrong count — surface it so the person knows generation
+        // wasn't "spot on" instead of trusting a batch that's actually off.
+        let mut shortfalls = Vec::new();
+        if headlines.len() < headlines_per_day {
+            shortfalls.push(format!("{} of {} headlines", headlines.len(), headlines_per_day));
+        }
+        if quotes.len() < quotes_per_day {
+            shortfalls.push(format!("{} of {} quotes", quotes.len(), quotes_per_day));
+        }
+        if tips.len() < tips_per_day {
+            shortfalls.push(format!("{} of {} tips", tips.len(), tips_per_day));
+        }
+        if !shortfalls.is_empty() {
+            return Err(format!(
+                "Couldn't get exact counts for {} ({}): only got {} after {MAX_DAY_ATTEMPTS} attempts. Try again, or switch to a stronger model in Settings → AI agent.",
+                day_date.format("%Y-%m-%d"),
+                if day_idx == 0 { "day 1".to_string() } else { format!("day {}", day_idx + 1) },
+                shortfalls.join(", ")
+            ));
         }
 
         // Cut any overshoot (whether from one generous attempt or piled up
