@@ -4,16 +4,16 @@ A simple, self-hosted Notion AI Assistant built with Rust and Tauri. This deskto
 
 ## Features
 
-- 🤖 **AI-Powered Content Prompting** - Get intelligent suggestions while working
-- 📝 **Notion Integration** - Seamless integration with Notion workspace
-- 🪟 **Small Window Interface** - Compact, always-available assistant window
-- 🔒 **Self-Hosted** - Run locally on your machine, no cloud dependencies
-- ⚡ **Fast & Lightweight** - Built with Rust for performance
-- 🎯 **Cross-Platform** - Works on Windows, macOS, and Linux
-- 🔐 **Secure** - Credentials stored securely with keyring integration
-- 📊 **Local Storage** - SQLite database for persistent storage
-- 🔄 **Real-time Updates** - Async request handling with Tokio
-- 🔌 **Desktop App** - Native Tauri application
+- **AI-Powered Content Prompting** - Get intelligent suggestions while working
+- **Notion Integration** - Seamless integration with Notion workspace
+- **Small Window Interface** - Compact, always-available assistant window
+- **Self-Hosted** - Run locally on your machine, no cloud dependencies
+- **Fast & Lightweight** - Built with Rust for performance
+- **Cross-Platform** - Works on Windows, macOS, and Linux
+- **Secure** - Credentials stored securely with keyring integration
+- **Local Storage** - SQLite database for persistent storage
+- **Real-time Updates** - Async request handling with Tokio
+- **Desktop App** - Native Tauri application
 
 ## Tech Stack
 
