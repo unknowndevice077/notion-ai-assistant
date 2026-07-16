@@ -150,7 +150,7 @@ async fn active_provider(db: &Db) -> Result<OpenAiCompatibleProvider, String> {
     match settings.ai_provider.as_str() {
         "byo" => {
             let key = keyring_get(BYO_API_KEY).ok_or("No API key saved yet — add one in Settings.".to_string())?;
-            Ok(OpenAiCompatibleProvider { base_url: "https://openrouter.ai/api/v1".to_string(), api_key: key, model: settings.byo_model })
+            Ok(OpenAiCompatibleProvider { base_url: "https://openrouter.ai/api/v1".to_string(), api_key: key, model: settings.byo_model, is_local: false })
         }
         _ => {
             let status = crate::ollama::check_status().await;
@@ -164,6 +164,7 @@ async fn active_provider(db: &Db) -> Result<OpenAiCompatibleProvider, String> {
                 base_url: format!("{}/v1", crate::ollama::OLLAMA_BASE_URL),
                 api_key: crate::ollama::OLLAMA_DUMMY_KEY.to_string(),
                 model,
+                is_local: true,
             })
         }
     }
@@ -178,6 +179,7 @@ async fn generate_with_safe_fallback(provider: &OpenAiCompatibleProvider, prompt
                 base_url: provider.base_url.clone(),
                 api_key: provider.api_key.clone(),
                 model: fallback_model,
+                is_local: provider.is_local,
             };
             fallback_provider.generate(prompt).await
         }

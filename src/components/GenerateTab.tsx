@@ -94,6 +94,7 @@ export default function GenerateTab() {
   const runCommand = async (command: string) => {
     setBusy(true);
     setError(null);
+    setBatch(null);
     setDecided(false);
     setExpandedIdx(null);
     try {
@@ -111,6 +112,7 @@ export default function GenerateTab() {
   const runPreset = async (preset: Preset, fieldValues: Record<string, string>) => {
     setBusy(true);
     setError(null);
+    setBatch(null);
     setDecided(false);
     setExpandedIdx(null);
     try {

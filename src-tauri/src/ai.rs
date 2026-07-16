@@ -46,6 +46,16 @@ pub struct OpenAiCompatibleProvider {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    /// True when this provider is a local Ollama instance rather than a
+    /// hosted API. Ollama's OpenAI-compatible endpoint truncates
+    /// generation based on its OWN context window (num_ctx), which
+    /// defaults small (often 2048) regardless of the "max_tokens" we send
+    /// — that mismatch is what causes "EOF while parsing a string" mid-
+    /// response on some machines but not others, purely based on local
+    /// Ollama defaults. When true, an explicit larger num_ctx is sent
+    /// (Ollama-specific field, safely ignored by hosted OpenAI-compatible
+    /// APIs that don't recognize it, so it's only ever added here).
+    pub is_local: bool,
 }
 
 const SYSTEM_PROMPT: &str = r#"You are a content generation assistant embedded in a desktop app connected to a client's Notion workspace. You will be given an instruction, which may include a business name and business context. You will also sometimes be given EXISTING CONTENT for a business that you are being asked to edit or add to — in that case, stay consistent with its tone and only produce what the instruction asks for. Respond ONLY with a single JSON object, no prose, no markdown fences, matching exactly this shape:
@@ -100,27 +110,47 @@ impl OpenAiCompatibleProvider {
 
     pub async fn generate(&self, user_prompt: &str) -> Result<Vec<ContentItem>, AiError> {
         let client = reqwest::Client::new();
+        let mut payload = json!({
+            "model": self.model,
+            "messages": [
+                { "role": "system", "content": SYSTEM_PROMPT },
+                { "role": "user", "content": user_prompt }
+            ],
+            "temperature": 0.8,
+            // Raised from 4096: a 10-day preset asking for 5 headlines +
+            // 5 quotes + 5 tips per day is 150 items, each needing a
+            // title + text field. At ~50-80 tokens/item that's roughly
+            // 9,000-12,000 tokens of pure JSON content — well past the
+            // old 4096 cap, which is what was silently truncating the
+            // response mid-JSON and leaving only a handful of items
+            // after parsing. This is a mitigation, not a full fix — see
+            // commands.rs for the real fix (per-day generation calls
+            // instead of one giant request).
+            "max_tokens": 16000
+        });
+
+        if self.is_local {
+            // Ollama's own context window (num_ctx) truncates generation
+            // independently of max_tokens, and defaults small on a lot of
+            // installs — this is the actual cause of "works on my machine,
+            // truncates mid-response on theirs" for local models. Bump it
+            // explicitly. Hosted OpenAI-compatible APIs don't have this
+            // field, but since is_local is only true for the Ollama branch,
+            // this never gets sent anywhere else.
+            //
+            // Uses as_object_mut().insert() rather than payload["options"] =
+            // ... — bracket index-assignment on serde_json::Value trips the
+            // same rust-analyzer false-positive (E0608) as bracket-reading
+            // one, even though both are valid, real serde_json APIs.
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert("options".to_string(), json!({ "num_ctx": 8192 }));
+            }
+        }
+
         let resp = client
             .post(format!("{}/chat/completions", self.base_url.trim_end_matches('/')))
             .bearer_auth(&self.api_key)
-            .json(&json!({
-                "model": self.model,
-                "messages": [
-                    { "role": "system", "content": SYSTEM_PROMPT },
-                    { "role": "user", "content": user_prompt }
-                ],
-                "temperature": 0.8,
-                // Raised from 4096: a 10-day preset asking for 5 headlines +
-                // 5 quotes + 5 tips per day is 150 items, each needing a
-                // title + text field. At ~50-80 tokens/item that's roughly
-                // 9,000-12,000 tokens of pure JSON content — well past the
-                // old 4096 cap, which is what was silently truncating the
-                // response mid-JSON and leaving only a handful of items
-                // after parsing. This is a mitigation, not a full fix — see
-                // commands.rs for the real fix (per-day generation calls
-                // instead of one giant request).
-                "max_tokens": 16000
-            }))
+            .json(&payload)
             .send()
             .await?;
 
@@ -309,7 +339,12 @@ mod tests {
         let broken = r#"{ "items": [ { "type": "quote", "title": "Timeless Wisdom", "text": "The best time to plant a tree was 20 years ago. The second best time is now." – Chinese Proverb" } ] }"#;
         let repaired = repair_unescaped_quotes(broken);
         let parsed: serde_json::Value = serde_json::from_str(&repaired).expect("repaired JSON should parse");
-        let text = parsed["items"][0]["text"].as_str().unwrap();
+        let text = parsed
+            .get("items")
+            .and_then(|items| items.get(0))
+            .and_then(|item| item.get("text"))
+            .and_then(|t| t.as_str())
+            .expect("items[0].text should be a string");
         assert!(text.contains("Chinese Proverb"));
     }
 
