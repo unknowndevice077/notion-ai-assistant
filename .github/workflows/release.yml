@@ -1,7 +1,4 @@
-name: Build & Release
-
-permissions:
-  contents: write
+name: Build
 
 on:
   push:
@@ -41,16 +38,23 @@ jobs:
         run: npm ci
 
       - name: Build (Tauri)
-        uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Set this repo secret to bake your OpenRouter key into the built
           # binary as the default AI provider. Keep it spend-capped (see
           # README "Licensing & built-in key").
           BUILT_IN_OPENROUTER_KEY: ${{ secrets.BUILT_IN_OPENROUTER_KEY }}
+        run: npm run tauri build -- ${{ matrix.args }}
+
+      # Just hands you the built files from the Actions run page — no tag,
+      # no GitHub Release, nothing published anywhere. Publishing stays a
+      # manual step whenever you decide to do it yourself.
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Notion Content Prompter ${{ github.ref_name }}"
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          name: notion-ai-assistant-${{ matrix.platform }}
+          if-no-files-found: ignore
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
