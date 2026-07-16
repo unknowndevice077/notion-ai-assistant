@@ -75,20 +75,18 @@ npm run tauri build
 
 ## Configuration
 
-### Environment Setup
+All credentials are entered directly in the app, not through a `.env` file — there isn't one. Open the app, go to **Settings**, and:
 
-Create a `.env` file or set environment variables:
+- **Notion**: paste your integration token under the Notion section.
+- **AI Agent**: either pick a local Ollama model (no key needed), or choose "My own API key" and paste an API key for your provider.
 
-```env
-NOTION_API_KEY=your_notion_integration_token
-AI_API_KEY=your_ai_provider_api_key
-```
+Both are stored securely via the OS keyring (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux) — never written to a plaintext file.
 
 ### Notion Integration
 
 1. Create an integration at https://www.notion.com/my-integrations
 2. Copy the integration token
-3. Set it in the application settings or environment variables
+3. Paste it into the app's Settings tab
 4. Grant the integration access to your Notion workspace
 
 ## Usage
