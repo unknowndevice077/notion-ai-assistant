@@ -46,6 +46,10 @@ export default function GenerateTab() {
   const [discarding, setDiscarding] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [scopedBusiness, setScopedBusiness] = useState<Business | null>(null);
+  // Which of the two bottom-dock dropdowns is open — shared so opening one
+  // closes the other, instead of them being able to stack on top of each
+  // other in the same small dock.
+  const [openMenu, setOpenMenu] = useState<"preset" | "business" | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -297,8 +301,20 @@ export default function GenerateTab() {
           view) already shows that, so repeating it here was redundant. */}
       <div className="shrink-0 border-t border-border bg-surface-1 p-3 space-y-2">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-          <PresetBar presets={presets} onRun={runPreset} busy={busy} />
-          <BusinessBar selected={scopedBusiness} onSelect={setScopedBusiness} busy={busy} />
+          <PresetBar
+            presets={presets}
+            onRun={runPreset}
+            busy={busy}
+            open={openMenu === "preset"}
+            onOpenChange={(v) => setOpenMenu(v ? "preset" : null)}
+          />
+          <BusinessBar
+            selected={scopedBusiness}
+            onSelect={setScopedBusiness}
+            busy={busy}
+            open={openMenu === "business"}
+            onOpenChange={(v) => setOpenMenu(v ? "business" : null)}
+          />
         </div>
         {scopedBusiness && (
           <div className="flex items-center gap-1.5 rounded-sm border border-accent/40 bg-accent-muted/30 px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider text-ink-100">

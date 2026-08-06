@@ -301,6 +301,37 @@ impl NotionClient {
     }
 }
 
+/// Truncates on a char boundary, not a byte offset — `&s[..max]` panics the
+/// moment a multi-byte UTF-8 character (emoji, accented letter, curly
+/// quote — all things the AI happily generates) straddles byte `max`.
+/// Walks char boundaries instead so this is safe for any input.
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max { s.to_string() } else { format!("{}…", &s[..max.min(s.len())]) }
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &s[..end])
+}
+
+#[cfg(test)]
+mod truncate_tests {
+    use super::truncate;
+
+    #[test]
+    fn does_not_panic_when_a_multibyte_char_straddles_the_limit() {
+        // 100 emoji = 400 bytes; a naive `&s[..200]` byte-slice lands
+        // mid-character here and panics. Every char boundary in this string
+        // falls on a 4-byte stride, so max=200 sits exactly mid-emoji.
+        let s = "😀".repeat(100);
+        let result = truncate(&s, 200);
+        assert!(result.ends_with('…'));
+    }
+
+    #[test]
+    fn leaves_short_strings_untouched() {
+        assert_eq!(truncate("hello", 200), "hello");
+    }
 }

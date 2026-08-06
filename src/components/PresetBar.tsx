@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Preset } from "../lib/types";
+import { useOnClickOutside } from "../lib/hooks";
 
 interface PresetBarProps {
   presets: Preset[];
   onRun: (preset: Preset, fieldValues: Record<string, string>) => void;
   busy: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 const AMOUNT_FIELD = "Amount of content generation";
@@ -16,32 +19,36 @@ function todayIso(): string {
   return new Date(d.getTime() - tzOffsetMs).toISOString().slice(0, 10);
 }
 
-export default function PresetBar({ presets, onRun, busy }: PresetBarProps) {
-  const [open, setOpen] = useState(false);
+export default function PresetBar({ presets, onRun, busy, open, onOpenChange }: PresetBarProps) {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({ [AMOUNT_FIELD]: "10", [START_DATE_FIELD]: todayIso() });
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // There's one preset now ("business"), so open the form straight away.
   const preset = presets[0];
 
   const set = (field: string, value: string) => setFieldValues((prev) => ({ ...prev, [field]: value }));
 
+  useOnClickOutside(rootRef, open, () => onOpenChange(false));
+
   const run = () => {
     if (!preset) return;
     onRun(preset, fieldValues);
-    setOpen(false);
+    onOpenChange(false);
   };
 
   if (!preset) return null;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={rootRef}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => onOpenChange(!open)}
         disabled={busy}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         className="flex items-center gap-1.5 rounded-sm border border-border bg-surface-2 px-2.5 py-1.5 text-xs font-medium text-ink-70 transition-colors hover:border-border-strong hover:text-ink-100 disabled:opacity-40"
       >
         <span>Business Preset</span>
-        <span className={`transition-transform ${open ? "rotate-180" : ""}`}>▲</span>
+        <span aria-hidden="true" className={`transition-transform ${open ? "rotate-180" : ""}`}>▲</span>
       </button>
 
       {open && (

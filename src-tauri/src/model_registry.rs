@@ -19,7 +19,7 @@ pub const DEFAULT_MODEL_ID: &str = "llama3.2:3b";
 pub const LEGACY_HEAVY_MODEL_ID: &str = "deepseek-coder-v2:16b";
 
 const LOCAL_CATALOG: [LocalModelSpec; 12] = [
-    LocalModelSpec { id: "deepseek-coder-v2:16b", label: "DeepSeek Coder V2 16B — bundled default", min_ram_gb: 8 },
+    LocalModelSpec { id: "deepseek-coder-v2:16b", label: "DeepSeek Coder V2 16B — heavier, code-oriented", min_ram_gb: 8 },
     LocalModelSpec { id: "llama3.2:1b",     label: "Llama 3.2 1B — ultra-light, lowest RAM",  min_ram_gb: 4 },
     LocalModelSpec { id: "llama3.2:3b",     label: "Llama 3.2 3B — light, low RAM",           min_ram_gb: 4 },
     LocalModelSpec { id: "phi3:mini",       label: "Phi-3 Mini 3.8B — light, low RAM",        min_ram_gb: 4 },

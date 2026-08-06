@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { Business } from "../lib/types";
+import { useOnClickOutside } from "../lib/hooks";
 
 interface BusinessBarProps {
   selected: Business | null;
   onSelect: (business: Business | null) => void;
   busy: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 /**
@@ -16,9 +19,9 @@ interface BusinessBarProps {
  * page/databases — it never creates a new page, just edits/adds to the
  * one selected.
  */
-export default function BusinessBar({ selected, onSelect, busy }: BusinessBarProps) {
-  const [open, setOpen] = useState(false);
+export default function BusinessBar({ selected, onSelect, busy, open, onOpenChange }: BusinessBarProps) {
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const refresh = () => api.listBusinesses().then(setBusinesses).catch(() => setBusinesses([]));
 
@@ -30,16 +33,20 @@ export default function BusinessBar({ selected, onSelect, busy }: BusinessBarPro
     if (open) refresh();
   }, [open]);
 
+  useOnClickOutside(rootRef, open, () => onOpenChange(false));
+
   const pick = (business: Business | null) => {
     onSelect(business);
-    setOpen(false);
+    onOpenChange(false);
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={rootRef}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => onOpenChange(!open)}
         disabled={busy}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className={`flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 ${
           selected
             ? "border-accent bg-accent-muted text-ink-100"
@@ -47,7 +54,7 @@ export default function BusinessBar({ selected, onSelect, busy }: BusinessBarPro
         }`}
       >
         <span className="max-w-[10rem] truncate">{selected ? selected.name : "Edit Business Page"}</span>
-        <span className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}>▲</span>
+        <span aria-hidden="true" className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}>▲</span>
       </button>
 
       {open && (
