@@ -1,195 +1,69 @@
 # Notion AI Assistant
 
-A simple, self-hosted Notion AI Assistant built with Rust and Tauri. This desktop application provides a small-window content prompter that integrates AI capabilities with Notion, running as a self-contained desktop application.
+A small desktop app, built for a content agency client, that turns one prompt into a dated content calendar inside Notion: headlines, quotes and tips for each client business, with a matching cover photo, ready to post. No Notion setup by hand.
 
-## Features
+Built with **Rust + Tauri 2** and a **React + TypeScript** UI. It runs with a **local Ollama model** (no API key, nothing leaves the machine except the Notion push) or with **your own API key** for a cloud model.
 
-- **AI-Powered Content Prompting** - Get intelligent suggestions while working
-- **Notion Integration** - Seamless integration with Notion workspace
-- **Small Window Interface** - Compact, always-available assistant window
-- **Self-Hosted** - Run locally on your machine, no cloud dependencies
-- **Fast & Lightweight** - Built with Rust for performance
-- **Cross-Platform** - Works on Windows, macOS, and Linux
-- **Secure** - Credentials stored securely with keyring integration
-- **Local Storage** - SQLite database for persistent storage
-- **Real-time Updates** - Async request handling with Tokio
-- **Desktop App** - Native Tauri application
+## What it does
 
-## Tech Stack
+- **One prompt → organized Notion pages.** Describe what you want, or fill in a preset (business name, context, how many days, how many headlines/quotes/tips per day, start date). The app generates the content, builds the pages and databases in your Notion workspace, and dates each item on the calendar.
+- **One workspace per client business.** Switch between businesses from the top bar; each keeps its own context, so the content stays on-brand. Businesses deleted in Notion are dropped from the list on the next load, instead of lingering as stale entries.
+- **Cover photos.** The model suggests a short photo search for each business and the app pulls a matching image from Unsplash (optional, needs a free Unsplash key).
+- **Review before it's final.** Every run is saved as a batch you can list, and a push can be discarded.
+- **Local or cloud AI.** Pick an installed Ollama model, or pull one from inside the app. Or choose "My own API key" and paste a key for an OpenAI-compatible provider. Both connections can be tested from Settings.
 
-- **Frontend**: Tauri 2, Web Technologies (HTML/CSS/JS)
-- **Backend**: Rust 2021 Edition
-- **Desktop Framework**: Tauri 2
-- **Async Runtime**: Tokio with full features
-- **Database**: SQLite with rusqlite
-- **HTTP Client**: Reqwest with JSON support
-- **Serialization**: Serde with JSON support
-- **Security**: Keyring for credential storage
-- **UUID**: uuid v4 generation
-- **System Info**: sysinfo for hardware monitoring
-- **Error Handling**: thiserror
-- **Date/Time**: Chrono with serde support
+## Security
 
-## Requirements
+- The Notion token, AI key and Unsplash key are stored in the **OS keyring** (Credential Manager on Windows, Keychain on macOS, Secret Service on Linux), never in a file. There is no `.env`.
+- The local SQLite database holds settings, presets and batch history, not secrets.
+- The webview runs under a restrictive Content Security Policy (`default-src 'self'`).
+- With Ollama, prompts and generated content never leave the machine except when pushed to your own Notion workspace.
 
-- Rust 1.70+
-- Node.js 16+ (for frontend build)
-- Tauri CLI
-- Your preferred Notion API key
+## Install
 
-## Installation
+Download the latest Windows or macOS installer from [Releases](https://github.com/unknowndevice077/notion-ai-assistant/releases). Builds are produced by GitHub Actions whenever a `v*.*.*` tag is pushed.
 
-### From Source
+### First run
 
-1. Clone the repository:
+1. Create a Notion integration at https://www.notion.com/my-integrations, copy its token, and share the pages you want it to write to with the integration.
+2. Open the app → **Settings** → paste the token and press **Test**.
+3. Under **AI Agent**, pick a local Ollama model (install [Ollama](https://ollama.com) first) or choose "My own API key" and paste your key.
+4. Optional: paste an Unsplash access key for cover photos.
+
+## Build from source
+
+Requires Rust (stable), Node.js 18+ and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
+
 ```bash
 git clone https://github.com/unknowndevice077/notion-ai-assistant.git
 cd notion-ai-assistant
-```
-
-2. Install Tauri CLI (if not already installed):
-```bash
-cargo install tauri-cli
-```
-
-3. Install dependencies:
-```bash
-cd src-tauri
-cargo build
-```
-
-4. Install frontend dependencies:
-```bash
 npm install
+npm run tauri dev      # run in development
+npm run tauri build    # build an installer for this OS
 ```
 
-5. Run in development mode:
-```bash
-npm run tauri dev
-```
-
-6. Build for production:
-```bash
-npm run tauri build
-```
-
-## Configuration
-
-All credentials are entered directly in the app, not through a `.env` file — there isn't one. Open the app, go to **Settings**, and:
-
-- **Notion**: paste your integration token under the Notion section.
-- **AI Agent**: either pick a local Ollama model (no key needed), or choose "My own API key" and paste an API key for your provider.
-
-Both are stored securely via the OS keyring (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux) — never written to a plaintext file.
-
-### Notion Integration
-
-1. Create an integration at https://www.notion.com/my-integrations
-2. Copy the integration token
-3. Paste it into the app's Settings tab
-4. Grant the integration access to your Notion workspace
-
-## Usage
-
-### Starting the Assistant
-
-```bash
-npm run tauri dev
-```
-
-The assistant window will appear as a small, always-available overlay.
-
-### Keyboard Shortcuts
-
-- `Ctrl+Shift+A` (Windows/Linux) or `Cmd+Shift+A` (macOS) - Toggle assistant window
-- `Escape` - Close assistant window
-- `Enter` - Submit prompt
-
-## Project Structure
+## Project structure
 
 ```
-├── src/
-│   ├── lib.rs           # Rust backend library
-│   └── main.rs          # Desktop app entry point
+├── src/                     React + TypeScript UI
+│   ├── App.tsx
+│   └── components/          GenerateTab, PresetBar, BusinessBar, CommandBar, SettingsTab
 ├── src-tauri/
-│   ├── Cargo.toml       # Rust dependencies
-│   └── ...
-├── src-ui/              # Frontend source (if applicable)
-├── package.json         # Node dependencies
-└── tauri.conf.json      # Tauri configuration
+│   ├── src/
+│   │   ├── main.rs          Tauri setup, command registration
+│   │   ├── commands.rs      Commands the UI calls (generate, presets, businesses, settings)
+│   │   ├── ai.rs            Prompt building and parsing the model's JSON output
+│   │   ├── ollama.rs        Local model status, listing and pulling
+│   │   ├── model_registry.rs  Available models per provider
+│   │   ├── notion.rs        Notion API client: pages, databases, calendar entries
+│   │   ├── unsplash.rs      Cover photo search
+│   │   ├── db.rs            SQLite: settings, presets, batches
+│   │   └── models.rs        Shared types
+│   └── tauri.conf.json
+├── docs/spec.md             Architecture and design decisions
+└── .github/workflows/release.yml   Windows + macOS installers on tag push
 ```
-
-## Architecture
-
-### Backend (Rust)
-- Handles Notion API communication
-- Manages AI request processing
-- Stores credentials securely
-- Manages local SQLite database
-
-### Frontend (Tauri)
-- Provides the UI interface
-- Communicates with Rust backend via IPC
-- Displays AI responses
-- Manages settings and preferences
-
-## Building for Distribution
-
-### Windows
-```bash
-npm run tauri build -- --target x86_64-pc-windows-gnu
-```
-
-### macOS
-```bash
-npm run tauri build
-```
-
-### Linux
-```bash
-npm run tauri build
-```
-
-## Security Considerations
-
-- Credentials are stored using the system keyring (Keychain on macOS, Credential Manager on Windows, pass on Linux)
-- All API communications use HTTPS
-- No data is sent to external servers except to Notion and your AI provider
-- Self-hosted deployment means full control over your data
-
-## Performance
-
-- Lightweight Rust backend with minimal resource usage
-- Efficient async I/O with Tokio
-- SQLite local caching for faster responses
-- Optimized Tauri window with minimal memory footprint
-
-## Troubleshooting
-
-### Build Issues
-
-If you encounter build issues:
-
-1. Ensure Rust is up to date: `rustup update`
-2. Clear cargo cache: `cargo clean`
-3. Rebuild: `npm run tauri build`
-
-### Runtime Issues
-
-If the app crashes:
-
-1. Check the console logs
-2. Verify your API keys are correctly set
-3. Ensure Notion integration has proper permissions
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-For issues and questions, please open an issue on the GitHub repository.
+Apache License 2.0. See [LICENSE](LICENSE).
